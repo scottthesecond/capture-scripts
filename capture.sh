@@ -1,8 +1,6 @@
 #!/bin/bash
 
 # ---- CONFIG ----
-VIDEO_DEVICE="/dev/video0"
-AUDIO_DEVICE="hw:2,0"
 VIDEO_FORMAT="mjpeg"
 VIDEO_SIZE="640x480"
 FRAMERATE="30"
@@ -16,46 +14,253 @@ DEFAULT_SHARE="Production"
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   echo ""
   echo "Usage:"
-  echo "  $0 <project_folder> <tape_name> [--share <share>] [--muteStream] [--format prores|prores-lt|hevc]"
+  echo "  $0 [--project <folder>] [--tape <name>] [--share <share>] [--streamAudio] [--format <type>]"
   echo ""
-  echo "Arguments:"
-  echo "  <project_folder>  Required. Name of the project on the NAS. Can contain spaces (wrap in quotes)."
-  echo "  <tape_name>       Required. Name of the tape you're digitizing."
-  echo "  --share <share>   Optional. NAS share name. Defaults to 'Production'."
-  echo "  --muteStream      Optional. Mute the UDP stream (record audio, stream silent)."
-  echo "  --format <type>   Optional. Output recording format. Options: prores, prores-lt (default), hevc."
+  echo "Options:"
+  echo "  --project <folder>  Optional. Name of the project on the NAS. If omitted, will prompt for selection."
+  echo "  --tape <name>       Optional. Name of the tape you're digitizing. If omitted, will prompt for input."
+  echo "  --share <share>     Optional. NAS share name. Defaults to 'Production'."
+  echo "  --streamAudio       Optional. Include audio in UDP stream (default: stream video only)."
+  echo "  --format <type>     Optional. Output recording format. Options: prores, prores-lt (default), hevc."
+  echo ""
+  echo "Folder Selection:"
+  echo "  If no project folder is specified, the script will list available folders in the share."
+  echo "  You can then select from the numbered list."
+  echo ""
+  echo "Tape Name Input:"
+  echo "  If no tape name is specified, the script will prompt you to enter one interactively."
+  echo ""
+  echo "Device Selection:"
+  echo "  The script will automatically detect and prompt you to select video and audio devices."
+  echo "  Video devices are detected using v4l2-ctl --list-devices"
+  echo "  Audio devices are detected using arecord -l"
+  echo ""
+  echo "Examples:"
+  echo "  $0                                    # Fully interactive mode"
+  echo "  $0 --project \"My Project\"            # Select project, prompt for tape"
+  echo "  $0 --tape \"Tape001\"                 # Prompt for project, specify tape"
+  echo "  $0 --project \"My Project\" --tape \"Tape001\"  # Specify both"
+  echo "  $0 --streamAudio --format hevc       # Include audio in stream, use HEVC"
   echo ""
   exit 0
 fi
 
-# ---- Parse Positional Args ----
-PROJECT="$1"
-TAPE="$2"
-shift 2
+# ---- Device Selection Functions ----
+list_video_devices() {
+  echo "📹 Available video devices:"
+  echo ""
+  v4l2-ctl --list-devices 2>/dev/null | while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*$ ]]; then
+      continue
+    elif [[ "$line" =~ ^[[:space:]]*/dev/video[0-9]+ ]]; then
+      device=$(echo "$line" | tr -d ' ')
+      echo "  $device"
+    elif [[ ! "$line" =~ ^[[:space:]]*$ ]]; then
+      echo "  $line"
+    fi
+  done
+  echo ""
+}
 
-if [ -z "$PROJECT" ] || [ -z "$TAPE" ]; then
-  echo "❌ Error: Missing required arguments <project_folder> and/or <tape_name>"
-  echo "Run with --help for usage."
-  exit 1
-fi
+list_audio_devices() {
+  echo "🎤 Available audio devices:"
+  echo ""
+  arecord -l 2>/dev/null | while IFS= read -r line; do
+    if [[ "$line" =~ card[[:space:]]+([0-9]+):[[:space:]]+.*device[[:space:]]+([0-9]+) ]]; then
+      card_num="${BASH_REMATCH[1]}"
+      device_num="${BASH_REMATCH[2]}"
+      device_name=$(echo "$line" | sed 's/.*device[[:space:]]*[0-9]*:[[:space:]]*//')
+      echo "  hw:${card_num},${device_num} - $device_name"
+    fi
+  done
+  echo ""
+}
+
+select_video_device() {
+  local devices=()
+  
+  # Parse v4l2-ctl output to extract devices
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*(/dev/video[0-9]+) ]]; then
+      device="${BASH_REMATCH[1]}"
+      devices+=("$device")
+    fi
+  done < <(v4l2-ctl --list-devices 2>/dev/null)
+  
+  if [ ${#devices[@]} -eq 0 ]; then
+    echo "❌ No video devices found!"
+    exit 1
+  fi
+  
+  echo "📹 Select video device:"
+  for i in "${!devices[@]}"; do
+    echo "  $((i+1)). ${devices[i]}"
+  done
+  
+  # Debug: Show what devices were detected
+  echo "Debug: Detected devices: ${devices[*]}"
+  
+  while true; do
+    read -p "Enter choice (1-${#devices[@]}): " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#devices[@]}" ]; then
+      VIDEO_DEVICE="${devices[$((choice-1))]}"
+      echo "✅ Selected video device: $VIDEO_DEVICE"
+      break
+    else
+      echo "❌ Invalid choice. Please enter a number between 1 and ${#devices[@]}."
+    fi
+  done
+}
+
+select_audio_device() {
+  local devices=()
+  local device_names=()
+  
+  # Parse arecord output to extract devices
+  while IFS= read -r line; do
+    if [[ "$line" =~ card[[:space:]]+([0-9]+):[[:space:]]+.*device[[:space:]]+([0-9]+) ]]; then
+      card_num="${BASH_REMATCH[1]}"
+      device_num="${BASH_REMATCH[2]}"
+      device_name=$(echo "$line" | sed 's/.*device[[:space:]]*[0-9]*:[[:space:]]*//')
+      devices+=("hw:${card_num},${device_num}")
+      device_names+=("$device_name")
+    fi
+  done < <(arecord -l 2>/dev/null)
+  
+  if [ ${#devices[@]} -eq 0 ]; then
+    echo "❌ No audio devices found!"
+    exit 1
+  fi
+  
+  echo "🎤 Select audio device:"
+  for i in "${!devices[@]}"; do
+    echo "  $((i+1)). ${devices[i]} - ${device_names[i]}"
+  done
+  
+  # Debug: Show what devices were detected
+  //echo "Debug: Detected audio devices: ${devices[*]}"
+  
+  while true; do
+    read -p "Enter choice (1-${#devices[@]}): " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#devices[@]}" ]; then
+      AUDIO_DEVICE="${devices[$((choice-1))]}"
+      echo "✅ Selected audio device: $AUDIO_DEVICE"
+      break
+    else
+      echo "❌ Invalid choice. Please enter a number between 1 and ${#devices[@]}."
+    fi
+  done
+}
+
+# ---- Folder Selection Functions ----
+list_project_folders() {
+  echo "📁 Available project folders in share '$SHARE':"
+  echo ""
+  
+  local base_share="/mnt/${SHARE}"
+  if [ ! -d "$base_share" ]; then
+    echo "❌ Error: Share directory does not exist: $base_share"
+    exit 1
+  fi
+  
+  local folders=()
+  while IFS= read -r -d '' folder; do
+    if [ -d "$folder" ]; then
+      folder_name=$(basename "$folder")
+      folders+=("$folder_name")
+    fi
+  done < <(find "$base_share" -maxdepth 1 -type d -not -path "$base_share" -print0 2>/dev/null)
+  
+  if [ ${#folders[@]} -eq 0 ]; then
+    echo "❌ No project folders found in share '$SHARE'!"
+    echo "   Please create a project folder first."
+    exit 1
+  fi
+  
+  for i in "${!folders[@]}"; do
+    echo "  $((i+1)). ${folders[i]}"
+  done
+  echo ""
+  
+  # Return the folders array (this is a bit tricky in bash)
+  printf '%s\n' "${folders[@]}"
+}
+
+select_project_folder() {
+  local folders=()
+  
+  # Get the list of folders
+  while IFS= read -r folder; do
+    folders+=("$folder")
+  done < <(list_project_folders)
+  
+  if [ ${#folders[@]} -eq 0 ]; then
+    echo "❌ No project folders found!"
+    exit 1
+  fi
+  
+  echo "📁 Select project folder:"
+  for i in "${!folders[@]}"; do
+    echo "  $((i+1)). ${folders[i]}"
+  done
+  
+  while true; do
+    read -p "Enter choice (1-${#folders[@]}): " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#folders[@]}" ]; then
+      PROJECT="${folders[$((choice-1))]}"
+      echo "✅ Selected project folder: $PROJECT"
+      break
+    else
+      echo "❌ Invalid choice. Please enter a number between 1 and ${#folders[@]}."
+    fi
+  done
+}
+
+# ---- Tape Name Input Function ----
+input_tape_name() {
+  echo "📼 Enter tape name:"
+  while true; do
+    read -p "Tape name: " tape_input
+    if [ -n "$tape_input" ]; then
+      TAPE="$tape_input"
+      echo "✅ Tape name set to: $TAPE"
+      break
+    else
+      echo "❌ Tape name cannot be empty. Please enter a tape name."
+    fi
+  done
+}
 
 # ---- Default Flags ----
+PROJECT=""
+TAPE=""
 SHARE="$DEFAULT_SHARE"
-MUTE_STREAM=false
+MUTE_STREAM=true
 FORMAT="prores-lt"
 
-# ---- Parse Optional Flags ----
+# ---- Parse Named Parameters ----
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    --muteStream)
-      MUTE_STREAM=true
+    --project)
+      PROJECT="$2"
+      shift
       ;;
-    --format)
-      FORMAT="$2"
+    --tape)
+      TAPE="$2"
       shift
       ;;
     --share)
       SHARE="$2"
+      shift
+      ;;
+    --muteStream)
+      MUTE_STREAM=true
+      ;;
+    --streamAudio)
+      MUTE_STREAM=false
+      ;;
+    --format)
+      FORMAT="$2"
       shift
       ;;
     *)
@@ -65,6 +270,16 @@ while [[ "$#" -gt 0 ]]; do
   esac
   shift
 done
+
+# If PROJECT is not provided, we'll select it interactively
+if [ -z "$PROJECT" ]; then
+  echo "📁 Project folder not specified, will select interactively..."
+fi
+
+# If TAPE is not provided, we'll prompt for it interactively
+if [ -z "$TAPE" ]; then
+  echo "📼 Tape name not specified, will prompt for input..."
+fi
 
 # ---- Paths ----
 BASE_DIR="/mnt/${SHARE}/${PROJECT}"
@@ -115,8 +330,53 @@ case "$FORMAT" in
     ;;
 esac
 
+# ---- Folder Selection ----
+if [ -z "$PROJECT" ]; then
+  echo "📁 Project Folder Selection"
+  echo "=========================="
+  select_project_folder
+  echo ""
+fi
+
+# ---- Tape Name Input ----
+if [ -z "$TAPE" ]; then
+  echo "📼 Tape Name Input"
+  echo "================="
+  input_tape_name
+  echo ""
+fi
+
+# ---- Device Selection ----
+echo "🔧 Device Selection"
+echo "=================="
+list_video_devices
+select_video_device
+echo ""
+list_audio_devices
+select_audio_device
+echo ""
+
+# ---- Device Validation ----
+# echo "🔍 Validating selected devices..."
+if [ ! -e "$VIDEO_DEVICE" ]; then
+  echo "❌ Error: Video device '$VIDEO_DEVICE' does not exist!"
+  echo "   Please check that the device path is correct."
+  exit 1
+fi
+
+if ! arecord -l | grep -q "card.*device.*$(echo "$AUDIO_DEVICE" | cut -d: -f2 | cut -d, -f1)"; then
+  echo "❌ Error: Audio device '$AUDIO_DEVICE' not found in available devices!"
+  echo "   Please check that the device is available."
+  exit 1
+fi
+
+# echo "✅ Device validation passed"
+# echo ""
+
 # ---- Feedback ----
 echo "🎬 Recording to $OUTPUT_FILE using format: $FORMAT"
+echo "📹 Using video device: $VIDEO_DEVICE"
+echo "🎤 Using audio device: $AUDIO_DEVICE"
 if [ "$MUTE_STREAM" = true ]; then
   echo "🔇 Stream will be video-only"
 else
