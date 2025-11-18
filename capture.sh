@@ -238,12 +238,92 @@ input_tape_name() {
   done
 }
 
+# ---- Settings Save/Load Functions ----
+SAVE_FILE="$SCRIPT_DIR/.capture-settings"
+
+save_settings() {
+  cat > "$SAVE_FILE" <<EOF
+PROJECT="$PROJECT"
+TAPE="$TAPE"
+VIDEO_DEVICE="$VIDEO_DEVICE"
+AUDIO_DEVICE="$AUDIO_DEVICE"
+SHARE="$SHARE"
+FORMAT="$FORMAT"
+MUTE_STREAM="$MUTE_STREAM"
+EOF
+}
+
+load_settings() {
+  if [[ -f "$SAVE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$SAVE_FILE"
+    return 0
+  fi
+  return 1
+}
+
+prompt_resume() {
+  local saved_project saved_tape saved_video saved_audio saved_share saved_format saved_mute
+  
+  if ! load_settings; then
+    return 1
+  fi
+  
+  # Store saved values
+  saved_project="$PROJECT"
+  saved_tape="$TAPE"
+  saved_video="$VIDEO_DEVICE"
+  saved_audio="$AUDIO_DEVICE"
+  saved_share="$SHARE"
+  saved_format="$FORMAT"
+  saved_mute="$MUTE_STREAM"
+  
+  echo ""
+  echo "💾 Resume with these settings?"
+  echo "=============================="
+  echo "  📁 Project: $saved_project"
+  echo "  📼 Tape: $saved_tape"
+  echo "  📹 Video Device: $saved_video"
+  echo "  🎤 Audio Device: $saved_audio"
+  echo "  📂 Share: $saved_share"
+  echo "  🎬 Format: $saved_format"
+  echo "  🔊 Stream Audio: $([ "$saved_mute" = "true" ] && echo "No" || echo "Yes")"
+  echo ""
+  
+  while true; do
+    read -p "Resume with these settings? (y/n): " response
+    case "$response" in
+      [yY]|[yY][eE][sS])
+        echo "✅ Resuming with saved settings..."
+        # Apply saved settings only if not overridden by command line
+        [ -z "$PROJECT" ] && PROJECT="$saved_project"
+        [ -z "$TAPE" ] && TAPE="$saved_tape"
+        [ -z "$VIDEO_DEVICE" ] && VIDEO_DEVICE="$saved_video"
+        [ -z "$AUDIO_DEVICE" ] && AUDIO_DEVICE="$saved_audio"
+        [ "$SHARE" = "$DEFAULT_SHARE" ] && SHARE="$saved_share"
+        [ "$FORMAT" = "prores-lt" ] && FORMAT="$saved_format"
+        [ "$MUTE_STREAM" = "true" ] && MUTE_STREAM="$saved_mute"
+        return 0
+        ;;
+      [nN]|[nN][oO])
+        echo "🔄 Starting fresh configuration..."
+        return 1
+        ;;
+      *)
+        echo "❌ Please enter 'y' or 'n'."
+        ;;
+    esac
+  done
+}
+
 # ---- Default Flags ----
 PROJECT=""
 TAPE=""
 SHARE="$DEFAULT_SHARE"
 MUTE_STREAM=true
 FORMAT="prores-lt"
+VIDEO_DEVICE=""
+AUDIO_DEVICE=""
 
 # ---- Parse Named Parameters ----
 while [[ "$#" -gt 0 ]]; do
@@ -278,14 +358,11 @@ while [[ "$#" -gt 0 ]]; do
   shift
 done
 
-# If PROJECT is not provided, we'll select it interactively
-if [ -z "$PROJECT" ]; then
-  echo "📁 Project folder not specified, will select interactively..."
-fi
-
-# If TAPE is not provided, we'll prompt for it interactively
-if [ -z "$TAPE" ]; then
-  echo "📼 Tape name not specified, will prompt for input..."
+# ---- Check for Saved Settings ----
+RESUME_MODE=false
+if prompt_resume; then
+  RESUME_MODE=true
+  echo ""
 fi
 
 # ---- Paths ----
