@@ -544,13 +544,13 @@ if [ "$MUTE_STREAM" = true ]; then
     -f v4l2 -input_format "$VIDEO_FORMAT" -framerate "$FRAMERATE" -video_size "$VIDEO_SIZE" -i "$VIDEO_DEVICE" \
     -f alsa -i "$AUDIO_DEVICE" \
     -map 0:v -map 1:a -c:v "$VIDEO_CODEC" $ENC_OPTIONS -pix_fmt "$PIX_FMT" -c:a "$AUDIO_CODEC" "$OUTPUT_FILE" \
-    -map 0:v -c:v mpeg2video -b:v "$BITRATE" -maxrate "$BITRATE" -bufsize "$BUF_SIZE" -an \
-    -f mpegts "$STREAM_DEST"
+    -map 0:v -c:v mpeg2video -b:v "$BITRATE" -maxrate "$BITRATE" -bufsize "$BUF_SIZE" -g 1 -flags low_delay -an \
+    -fflags nobuffer -flags low_delay -f mpegts "$STREAM_DEST"
 else
   ffmpeg \
     -f v4l2 -input_format "$VIDEO_FORMAT" -framerate "$FRAMERATE" -video_size "$VIDEO_SIZE" -i "$VIDEO_DEVICE" \
     -f alsa -i "$AUDIO_DEVICE" \
     -map 0:v -map 1:a -c:v "$VIDEO_CODEC" $ENC_OPTIONS -pix_fmt "$PIX_FMT" -c:a "$AUDIO_CODEC" "$OUTPUT_FILE" \
-    -map 0:v -map 1:a -c:v mpeg2video -b:v "$BITRATE" -maxrate "$BITRATE" -bufsize "$BUF_SIZE" -c:a "${STREAM_AUDIO_CODEC:-aac}" -b:a "${STREAM_AUDIO_BITRATE:-128k}" -ar 48000 -ac 2 \
-    -f mpegts "$STREAM_DEST"
+    -map 0:v -map 1:a -c:v mpeg2video -b:v "$BITRATE" -maxrate "$BITRATE" -bufsize "$BUF_SIZE" -g 1 -flags low_delay -c:a "${STREAM_AUDIO_CODEC:-aac}" -b:a "${STREAM_AUDIO_BITRATE:-128k}" -ar 48000 -ac 2 -aac_coder fast \
+    -fflags nobuffer -flags low_delay -f mpegts "$STREAM_DEST"
 fi
