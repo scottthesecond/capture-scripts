@@ -11,7 +11,8 @@ fi
 VIDEO_FORMAT="${VIDEO_FORMAT:-mjpeg}"
 VIDEO_SIZE="${VIDEO_SIZE:-640x480}"
 FRAMERATE="${FRAMERATE:-30}"
-STREAM_DEST="${STREAM_DEST:-udp://10.0.0.120:1234}"
+STREAM_PORT="${STREAM_PORT:-1234}"
+STREAM_DEST="${STREAM_DEST:-tcp://0.0.0.0:${STREAM_PORT}?listen=1}"
 BITRATE="${BITRATE:-6M}"
 BUF_SIZE="${BUF_SIZE:-12M}"
 SHARE="${SHARE:-Production}"
@@ -27,7 +28,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   echo "  --project <folder>  Optional. Name of the project on the NAS. If omitted, will prompt for selection."
   echo "  --tape <name>       Optional. Name of the tape you're digitizing. If omitted, will prompt for input."
   echo "  --share <share>     Optional. NAS share name. Defaults to 'Production'."
-  echo "  --streamAudio       Optional. Include audio in UDP stream (default: stream video only)."
+  echo "  --streamAudio       Optional. Include audio in preview stream (default: stream video only)."
   echo "  --format <type>     Optional. Output recording format. Options: prores, prores-lt (default), hevc."
   echo ""
   echo "Folder Selection:"
@@ -499,10 +500,11 @@ echo "🎬 Recording to $OUTPUT_FILE using format: $FORMAT"
 echo "📹 Using video device: $VIDEO_DEVICE"
 echo "🎤 Using audio device: $AUDIO_DEVICE"
 if [ "$MUTE_STREAM" = true ]; then
-  echo "🔇 Stream will be video-only"
+  echo "🔇 Preview stream will be video-only"
 else
-  echo "📡 Streaming video + audio to $STREAM_DEST"
+  echo "📡 Preview stream will include video + audio"
 fi
+echo "🌐 Waiting for receiver connection on port $STREAM_PORT..."
 echo "⏹ Press Ctrl+C to stop."
 
 # ---- Run ffmpeg ----

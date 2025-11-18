@@ -13,7 +13,7 @@ This project is designed for tape digitization workflows where:
 - Recordings are saved to a network-attached storage (NAS) share
 - You want to organize captures by project and tape name
 
-The system uses `ffmpeg` to capture from V4L2 video devices and ALSA audio devices, encoding the recording to disk while simultaneously streaming a preview feed via UDP.
+The system uses `ffmpeg` to capture from V4L2 video devices and ALSA audio devices, encoding the recording to disk while simultaneously serving a preview feed via TCP. The receiver connects to the sender, allowing you to monitor the capture process remotely.
 
 ## Features
 
@@ -48,10 +48,19 @@ The system uses `ffmpeg` to capture from V4L2 video devices and ALSA audio devic
 2. **Mount your NAS share** to `/mnt/<share_name>/` (e.g., `/mnt/Production/`)
 
 3. **Create a `.env` file** (optional) in the script directory to customize defaults:
+   
+   **On the capture machine:**
    ```bash
    cp .env.example .env
    # Edit .env with your preferred settings
    ```
+   
+   **On the viewing/receiving machine:**
+   ```bash
+   cp .env.receiver.example .env
+   # Edit .env and set SENDER_IP to your capture machine's IP address
+   ```
+   
    See the [Configuration](#configuration) section below for all available environment variables.
 
 4. **Create project folders** on your NAS share. The script will look for folders in `/mnt/<share>/` and let you select from them.
@@ -103,7 +112,7 @@ The capture script can be run in fully interactive mode or with command-line arg
 5. **Recording**: The script will:
    - Create a folder structure: `/mnt/<share>/<project>/<tape>/`
    - Start recording with an auto-incrementing filename (1.mov, 2.mov, etc.)
-   - Stream the preview to the configured UDP destination
+   - Start a TCP server waiting for receiver connections
    - Save your settings for next time
 
 6. **Stop Recording**: Press `Ctrl+C` to stop the capture
@@ -114,23 +123,42 @@ The script saves your last used settings (project, tape, devices, format, etc.) 
 
 ### Receive Script (`receive.sh`)
 
-On your viewing machine, run the receive script to display the preview stream:
+On your viewing machine, run the receive script to connect to and display the preview stream:
 
 ```bash
-./receive.sh
+./receive.sh [<sender_ip>]
 ```
 
-This will start `ffplay` listening on UDP port 1234 and display the incoming stream with low-latency settings optimized for real-time preview.
+The script will connect to the capture machine and display the incoming stream with low-latency settings optimized for real-time preview.
 
-#### Customizing the Stream Destination
+#### Usage
 
-Set `STREAM_DEST` in your `.env` file:
+You can provide the sender IP address in three ways:
 
-```bash
-STREAM_DEST=udp://<viewing_machine_ip>:1234
-```
+1. **As a command-line argument** (recommended):
+   ```bash
+   ./receive.sh 10.0.0.100
+   ```
 
-Make sure the port matches what `receive.sh` is listening on (default: 1234).
+2. **Set `SENDER_IP` in your `.env` file**:
+   ```bash
+   SENDER_IP=10.0.0.100
+   ```
+   Then just run: `./receive.sh`
+
+3. **Set `SENDER_IP` as an environment variable**:
+   ```bash
+   export SENDER_IP=10.0.0.100
+   ./receive.sh
+   ```
+
+#### Customizing the Port
+
+The default port is 1234. You can change it by:
+- Setting `STREAM_PORT` in your `.env` file on both machines
+- Or providing it as a second argument: `./receive.sh 10.0.0.100 8080`
+
+**Note**: The receiver connects to the sender (pull model), so you don't need to know the receiver's IP address on the capture machine. The capture machine will record to disk even if no receiver is connected.
 
 ## Output Formats
 
@@ -158,15 +186,24 @@ The script automatically increments the filename number, so you can capture mult
 
 ### Environment Variables
 
-Create a `.env` file in the script directory to customize defaults. You can copy `.env.example` as a starting point:
+Create a `.env` file in the script directory to customize defaults. You can copy the appropriate example file as a starting point:
 
+**On the capture machine:**
 ```bash
 cp .env.example .env
 ```
 
+**On the receiving machine:**
+```bash
+cp .env.receiver.example .env
+# Edit .env and set SENDER_IP to your capture machine's IP address
+```
+
 #### Stream Configuration
 
-- `STREAM_DEST` - UDP destination for preview stream (default: `udp://10.0.0.120:1234`)
+- `STREAM_PORT` - TCP port for preview stream server (default: `1234`)
+- `STREAM_DEST` - Stream destination URL (default: `tcp://0.0.0.0:1234?listen=1` - automatically uses `STREAM_PORT`)
+- `SENDER_IP` - IP address of capture machine (for `receive.sh`, set in receiver's `.env`)
 - `BITRATE` - Bitrate for preview stream video (default: `6M`)
 - `BUF_SIZE` - Buffer size for preview stream (default: `12M`)
 - `STREAM_AUDIO_CODEC` - Audio codec for stream (default: `mp2`)
@@ -199,8 +236,11 @@ The preview stream uses these default settings (all configurable via environment
 - Video input: MJPEG format at 640x480, 30fps
 - Stream codec: MPEG-2 video
 - Stream bitrate: 6M
+- Stream protocol: TCP (receiver connects to sender)
 - Stream audio: Optional (disabled by default, enable with `--streamAudio`)
   - When enabled, uses MP2 codec at 128k bitrate
+
+**Workflow**: The capture machine starts a TCP server and waits for connections. The viewing machine connects when `receive.sh` is run. The capture machine will continue recording to disk even if no receiver is connected.
 
 ## Troubleshooting
 
@@ -216,9 +256,11 @@ The preview stream uses these default settings (all configurable via environment
 
 ### Stream not visible on viewing machine
 - Verify network connectivity between machines
-- Check firewall settings (UDP port 1234)
-- Ensure `STREAM_DEST` IP address matches the viewing machine
-- Verify `receive.sh` is running on the viewing machine
+- Check firewall settings (TCP port 1234, or your configured `STREAM_PORT`)
+- Ensure `SENDER_IP` is set correctly in `receive.sh` (or provided as argument)
+- Verify `capture.sh` is running and waiting for connections
+- Verify `receive.sh` is running and connecting to the correct IP/port
+- Try connecting with: `ffplay tcp://<sender_ip>:1234` to test directly
 
 ### NAS share not accessible
 - Verify the share is mounted at `/mnt/<share_name>/`
