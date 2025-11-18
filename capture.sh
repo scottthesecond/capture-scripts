@@ -253,23 +253,28 @@ MUTE_STREAM="$MUTE_STREAM"
 EOF
 }
 
-load_settings() {
-  if [[ -f "$SAVE_FILE" ]]; then
-    # shellcheck disable=SC1090
-    source "$SAVE_FILE"
-    return 0
-  fi
-  return 1
-}
-
 prompt_resume() {
   local saved_project saved_tape saved_video saved_audio saved_share saved_format saved_mute
+  local current_project current_tape current_video current_audio current_share current_format current_mute
   
-  if ! load_settings; then
+  if [[ ! -f "$SAVE_FILE" ]]; then
     return 1
   fi
   
-  # Store saved values
+  # Save current values
+  current_project="$PROJECT"
+  current_tape="$TAPE"
+  current_video="$VIDEO_DEVICE"
+  current_audio="$AUDIO_DEVICE"
+  current_share="$SHARE"
+  current_format="$FORMAT"
+  current_mute="$MUTE_STREAM"
+  
+  # Load saved values
+  # shellcheck disable=SC1090
+  source "$SAVE_FILE"
+  
+  # Copy to saved_* variables
   saved_project="$PROJECT"
   saved_tape="$TAPE"
   saved_video="$VIDEO_DEVICE"
@@ -277,6 +282,15 @@ prompt_resume() {
   saved_share="$SHARE"
   saved_format="$FORMAT"
   saved_mute="$MUTE_STREAM"
+  
+  # Restore current values
+  PROJECT="$current_project"
+  TAPE="$current_tape"
+  VIDEO_DEVICE="$current_video"
+  AUDIO_DEVICE="$current_audio"
+  SHARE="$current_share"
+  FORMAT="$current_format"
+  MUTE_STREAM="$current_mute"
   
   echo ""
   echo "💾 Resume with these settings?"
@@ -365,6 +379,38 @@ if prompt_resume; then
   echo ""
 fi
 
+# ---- Folder Selection ----
+if [ -z "$PROJECT" ]; then
+  echo "📁 Project Folder Selection"
+  echo "=========================="
+  select_project_folder
+  echo ""
+fi
+
+# ---- Tape Name Input ----
+if [ -z "$TAPE" ]; then
+  echo "📼 Tape Name Input"
+  echo "================="
+  input_tape_name
+  echo ""
+fi
+
+# ---- Device Selection ----
+if [ -z "$VIDEO_DEVICE" ] || [ -z "$AUDIO_DEVICE" ]; then
+  echo "🔧 Device Selection"
+  echo "=================="
+  if [ -z "$VIDEO_DEVICE" ]; then
+    list_video_devices
+    select_video_device
+    echo ""
+  fi
+  if [ -z "$AUDIO_DEVICE" ]; then
+    list_audio_devices
+    select_audio_device
+    echo ""
+  fi
+fi
+
 # ---- Paths ----
 BASE_DIR="/mnt/${SHARE}/${PROJECT}"
 TAPE_DIR="${BASE_DIR}/${TAPE}"
@@ -414,32 +460,6 @@ case "$FORMAT" in
     ;;
 esac
 
-# ---- Folder Selection ----
-if [ -z "$PROJECT" ]; then
-  echo "📁 Project Folder Selection"
-  echo "=========================="
-  select_project_folder
-  echo ""
-fi
-
-# ---- Tape Name Input ----
-if [ -z "$TAPE" ]; then
-  echo "📼 Tape Name Input"
-  echo "================="
-  input_tape_name
-  echo ""
-fi
-
-# ---- Device Selection ----
-echo "🔧 Device Selection"
-echo "=================="
-list_video_devices
-select_video_device
-echo ""
-list_audio_devices
-select_audio_device
-echo ""
-
 # ---- Device Validation ----
 # echo "🔍 Validating selected devices..."
 if [ ! -e "$VIDEO_DEVICE" ]; then
@@ -456,6 +476,9 @@ fi
 
 # echo "✅ Device validation passed"
 # echo ""
+
+# ---- Save Settings ----
+save_settings
 
 # ---- Feedback ----
 echo "🎬 Recording to $OUTPUT_FILE using format: $FORMAT"
