@@ -8,13 +8,13 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
 fi
 
-VIDEO_FORMAT="mjpeg"
-VIDEO_SIZE="640x480"
-FRAMERATE="30"
+VIDEO_FORMAT="${VIDEO_FORMAT:-mjpeg}"
+VIDEO_SIZE="${VIDEO_SIZE:-640x480}"
+FRAMERATE="${FRAMERATE:-30}"
 STREAM_DEST="${STREAM_DEST:-udp://10.0.0.120:1234}"
 BITRATE="${BITRATE:-6M}"
-BUF_SIZE="12M"
-DEFAULT_SHARE="Production"
+BUF_SIZE="${BUF_SIZE:-12M}"
+SHARE="${SHARE:-Production}"
 # ----------------
 
 # ---- HELP ----
@@ -323,7 +323,10 @@ prompt_resume() {
         [ -z "$TAPE" ] && TAPE="$saved_tape"
         [ -z "$VIDEO_DEVICE" ] && VIDEO_DEVICE="$saved_video"
         [ -z "$AUDIO_DEVICE" ] && AUDIO_DEVICE="$saved_audio"
-        [ "$SHARE" = "$DEFAULT_SHARE" ] && SHARE="$saved_share"
+        # Only restore saved share if it wasn't set via command line
+        if [ "$SHARE_SET_VIA_CLI" != "true" ]; then
+          SHARE="$saved_share"
+        fi
         [ "$FORMAT" = "prores-lt" ] && FORMAT="$saved_format"
         [ "$MUTE_STREAM" = "true" ] && MUTE_STREAM="$saved_mute"
         return 0
@@ -342,9 +345,10 @@ prompt_resume() {
 # ---- Default Flags ----
 PROJECT=""
 TAPE=""
-SHARE="$DEFAULT_SHARE"
+# SHARE is set above from env var with default
+SHARE_SET_VIA_CLI=false
 MUTE_STREAM=true
-FORMAT="prores-lt"
+FORMAT="${FORMAT:-prores-lt}"
 VIDEO_DEVICE=""
 AUDIO_DEVICE=""
 
@@ -361,6 +365,7 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --share)
       SHARE="$2"
+      SHARE_SET_VIA_CLI=true
       shift
       ;;
     --muteStream)
@@ -442,7 +447,7 @@ OUTPUT_FILE="${TAPE_DIR}/${INDEX}.mov"
 
 # ---- Determine Codec Options ----
 VIDEO_CODEC=""
-AUDIO_CODEC="pcm_s16le"
+AUDIO_CODEC="${AUDIO_CODEC:-pcm_s16le}"
 PIX_FMT=""
 ENC_OPTIONS=""
 
@@ -513,6 +518,6 @@ else
     -f v4l2 -input_format "$VIDEO_FORMAT" -framerate "$FRAMERATE" -video_size "$VIDEO_SIZE" -i "$VIDEO_DEVICE" \
     -f alsa -i "$AUDIO_DEVICE" \
     -map 0:v -map 1:a -c:v "$VIDEO_CODEC" $ENC_OPTIONS -pix_fmt "$PIX_FMT" -c:a "$AUDIO_CODEC" "$OUTPUT_FILE" \
-    -map 0:v -map 1:a -c:v mpeg2video -b:v "$BITRATE" -maxrate "$BITRATE" -bufsize "$BUF_SIZE" -c:a mp2 -b:a 128k \
+    -map 0:v -map 1:a -c:v mpeg2video -b:v "$BITRATE" -maxrate "$BITRATE" -bufsize "$BUF_SIZE" -c:a "${STREAM_AUDIO_CODEC:-mp2}" -b:a "${STREAM_AUDIO_BITRATE:-128k}" \
     -f mpegts "$STREAM_DEST"
 fi
