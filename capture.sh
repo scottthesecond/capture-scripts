@@ -286,13 +286,12 @@ VIDEO_DEVICE="$VIDEO_DEVICE"
 AUDIO_DEVICE="$AUDIO_DEVICE"
 SHARE="$SHARE"
 FORMAT="$FORMAT"
-MUTE_STREAM="$MUTE_STREAM"
 EOF
 }
 
 prompt_resume() {
-  local saved_project saved_tape saved_video saved_audio saved_share saved_format saved_mute
-  local current_project current_tape current_video current_audio current_share current_format current_mute
+  local saved_project saved_tape saved_video saved_audio saved_share saved_format
+  local current_project current_tape current_video current_audio current_share current_format
   
   if [[ ! -f "$SAVE_FILE" ]]; then
     return 1
@@ -305,7 +304,6 @@ prompt_resume() {
   current_audio="$AUDIO_DEVICE"
   current_share="$SHARE"
   current_format="$FORMAT"
-  current_mute="$MUTE_STREAM"
   
   # Load saved values
   # shellcheck disable=SC1090
@@ -318,7 +316,6 @@ prompt_resume() {
   saved_audio="$AUDIO_DEVICE"
   saved_share="$SHARE"
   saved_format="$FORMAT"
-  saved_mute="$MUTE_STREAM"
   
   # Restore current values
   PROJECT="$current_project"
@@ -327,7 +324,6 @@ prompt_resume() {
   AUDIO_DEVICE="$current_audio"
   SHARE="$current_share"
   FORMAT="$current_format"
-  MUTE_STREAM="$current_mute"
   
   echo ""
   echo "💾 Resume with these settings?"
@@ -338,7 +334,6 @@ prompt_resume() {
   echo "  🎤 Audio Device: $saved_audio"
   echo "  📂 Share: $saved_share"
   echo "  🎬 Format: $saved_format"
-  echo "  🔊 Stream Audio: $([ "$saved_mute" = "true" ] && echo "No" || echo "Yes")"
   echo ""
   
   while true; do
@@ -356,7 +351,6 @@ prompt_resume() {
           SHARE="$saved_share"
         fi
         [ "$FORMAT" = "prores-lt" ] && FORMAT="$saved_format"
-        [ "$MUTE_STREAM" = "true" ] && MUTE_STREAM="$saved_mute"
         return 0
         ;;
       [nN]|[nN][oO])
