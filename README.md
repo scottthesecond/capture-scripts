@@ -47,11 +47,12 @@ The system uses `ffmpeg` to capture from V4L2 video devices and ALSA audio devic
 
 2. **Mount your NAS share** to `/mnt/<share_name>/` (e.g., `/mnt/Production/`)
 
-3. **Create a `.env` file** (optional) in the script directory to set defaults:
+3. **Create a `.env` file** (optional) in the script directory to customize defaults:
    ```bash
-   STREAM_DEST=udp://10.0.0.120:1234
-   BITRATE=6M
+   cp .env.example .env
+   # Edit .env with your preferred settings
    ```
+   See the [Configuration](#configuration) section below for all available environment variables.
 
 4. **Create project folders** on your NAS share. The script will look for folders in `/mnt/<share>/` and let you select from them.
 
@@ -69,7 +70,7 @@ The capture script can be run in fully interactive mode or with command-line arg
 
 - `--project <folder>` - Specify the project folder name (skips selection prompt)
 - `--tape <name>` - Specify the tape name (skips input prompt)
-- `--share <share>` - NAS share name (defaults to "Production")
+- `--share <share>` - NAS share name (defaults to value in `.env` or "Production")
 - `--streamAudio` - Include audio in the UDP preview stream (default: video only)
 - `--format <type>` - Output format: `prores`, `prores-lt` (default), or `hevc`
 - `-h, --help` - Show help message
@@ -123,7 +124,7 @@ This will start `ffplay` listening on UDP port 1234 and display the incoming str
 
 #### Customizing the Stream Destination
 
-Edit the `STREAM_DEST` variable in `capture.sh` or set it in your `.env` file:
+Set `STREAM_DEST` in your `.env` file:
 
 ```bash
 STREAM_DEST=udp://<viewing_machine_ip>:1234
@@ -157,20 +158,49 @@ The script automatically increments the filename number, so you can capture mult
 
 ### Environment Variables
 
-Create a `.env` file in the script directory to set defaults:
+Create a `.env` file in the script directory to customize defaults. You can copy `.env.example` as a starting point:
 
 ```bash
-STREAM_DEST=udp://10.0.0.120:1234  # UDP destination for preview stream
-BITRATE=6M                          # Bitrate for preview stream
+cp .env.example .env
 ```
+
+#### Stream Configuration
+
+- `STREAM_DEST` - UDP destination for preview stream (default: `udp://10.0.0.120:1234`)
+- `BITRATE` - Bitrate for preview stream video (default: `6M`)
+- `BUF_SIZE` - Buffer size for preview stream (default: `12M`)
+- `STREAM_AUDIO_CODEC` - Audio codec for stream (default: `mp2`)
+- `STREAM_AUDIO_BITRATE` - Audio bitrate for stream (default: `128k`)
+
+#### Video Capture Configuration
+
+- `VIDEO_FORMAT` - Video capture format (default: `mjpeg`)
+  - Common options: `mjpeg`, `yuyv422`, `h264`
+- `VIDEO_SIZE` - Video capture resolution (default: `640x480`)
+  - Common options: `640x480`, `1280x720`, `1920x1080`
+- `FRAMERATE` - Video capture framerate (default: `30`)
+  - Common options: `25`, `30`, `60`
+
+#### Audio Configuration
+
+- `AUDIO_CODEC` - Audio codec for recording (default: `pcm_s16le`)
+  - Common options: `pcm_s16le`, `pcm_s24le`, `aac`
+
+#### Output Configuration
+
+- `FORMAT` - Default output format (default: `prores-lt`)
+  - Options: `prores`, `prores-lt`, `hevc`
+- `SHARE` - Default NAS share name (default: `Production`)
+  - This is the name of the mounted share at `/mnt/<SHARE>/`
 
 ### Stream Settings
 
-The preview stream uses these default settings (configurable in the script):
-- Format: MJPEG input at 640x480, 30fps
+The preview stream uses these default settings (all configurable via environment variables):
+- Video input: MJPEG format at 640x480, 30fps
 - Stream codec: MPEG-2 video
-- Stream bitrate: 6M (configurable via `BITRATE` env var)
-- Audio: Optional (disabled by default, enable with `--streamAudio`)
+- Stream bitrate: 6M
+- Stream audio: Optional (disabled by default, enable with `--streamAudio`)
+  - When enabled, uses MP2 codec at 128k bitrate
 
 ## Troubleshooting
 
