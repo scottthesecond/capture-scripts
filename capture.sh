@@ -145,7 +145,7 @@ select_audio_device() {
   done
   
   # Debug: Show what devices were detected
-  //echo "Debug: Detected audio devices: ${devices[*]}"
+  # echo "Debug: Detected audio devices: ${devices[*]}"
   
   while true; do
     read -p "Enter choice (1-${#devices[@]}): " choice
@@ -160,13 +160,10 @@ select_audio_device() {
 }
 
 # ---- Folder Selection Functions ----
-list_project_folders() {
-  echo "📁 Available project folders in share '$SHARE':"
-  echo ""
-  
+get_project_folders() {
   local base_share="/mnt/${SHARE}"
   if [ ! -d "$base_share" ]; then
-    echo "❌ Error: Share directory does not exist: $base_share"
+    echo "❌ Error: Share directory does not exist: $base_share" >&2
     exit 1
   fi
   
@@ -179,18 +176,30 @@ list_project_folders() {
   done < <(find "$base_share" -maxdepth 1 -type d -not -path "$base_share" -print0 2>/dev/null)
   
   if [ ${#folders[@]} -eq 0 ]; then
-    echo "❌ No project folders found in share '$SHARE'!"
-    echo "   Please create a project folder first."
+    echo "❌ No project folders found in share '$SHARE'!" >&2
+    echo "   Please create a project folder first." >&2
     exit 1
   fi
+  
+  # Return the folders array via printf (to stdout)
+  printf '%s\n' "${folders[@]}"
+}
+
+list_project_folders() {
+  local folders=()
+  
+  echo "📁 Available project folders in share '$SHARE':"
+  echo ""
+  
+  # Get the list of folders
+  while IFS= read -r folder; do
+    folders+=("$folder")
+  done < <(get_project_folders)
   
   for i in "${!folders[@]}"; do
     echo "  $((i+1)). ${folders[i]}"
   done
   echo ""
-  
-  # Return the folders array (this is a bit tricky in bash)
-  printf '%s\n' "${folders[@]}"
 }
 
 select_project_folder() {
@@ -199,7 +208,7 @@ select_project_folder() {
   # Get the list of folders
   while IFS= read -r folder; do
     folders+=("$folder")
-  done < <(list_project_folders)
+  done < <(get_project_folders)
   
   if [ ${#folders[@]} -eq 0 ]; then
     echo "❌ No project folders found!"
