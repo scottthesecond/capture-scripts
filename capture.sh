@@ -247,6 +247,34 @@ input_tape_name() {
   done
 }
 
+# ---- Stream Audio Input Function ----
+prompt_stream_audio() {
+  echo "🔊 Stream Audio"
+  echo "=============="
+  while true; do
+    read -p "Include audio in UDP stream? (y/n, default: n): " response
+    case "$response" in
+      [yY]|[yY][eE][sS])
+        MUTE_STREAM=false
+        echo "✅ Stream will include audio"
+        break
+        ;;
+      [nN]|[nN][oO]|"")
+        MUTE_STREAM=true
+        if [ -z "$response" ]; then
+          echo "✅ Stream will be video-only (default)"
+        else
+          echo "✅ Stream will be video-only"
+        fi
+        break
+        ;;
+      *)
+        echo "❌ Please enter 'y' or 'n'."
+        ;;
+    esac
+  done
+}
+
 # ---- Settings Save/Load Functions ----
 SAVE_FILE="$SCRIPT_DIR/.capture-settings"
 
@@ -348,6 +376,7 @@ TAPE=""
 # SHARE is set above from env var with default
 SHARE_SET_VIA_CLI=false
 MUTE_STREAM=true
+MUTE_STREAM_SET_VIA_CLI=false
 FORMAT="${FORMAT:-prores-lt}"
 VIDEO_DEVICE=""
 AUDIO_DEVICE=""
@@ -370,9 +399,11 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --muteStream)
       MUTE_STREAM=true
+      MUTE_STREAM_SET_VIA_CLI=true
       ;;
     --streamAudio)
       MUTE_STREAM=false
+      MUTE_STREAM_SET_VIA_CLI=true
       ;;
     --format)
       FORMAT="$2"
@@ -406,6 +437,12 @@ if [ -z "$TAPE" ]; then
   echo "📼 Tape Name Input"
   echo "================="
   input_tape_name
+  echo ""
+fi
+
+# ---- Stream Audio Input ----
+if [ "$MUTE_STREAM_SET_VIA_CLI" = false ]; then
+  prompt_stream_audio
   echo ""
 fi
 
