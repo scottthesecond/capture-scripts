@@ -1,11 +1,18 @@
 #!/bin/bash
 
 # ---- CONFIG ----
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
 VIDEO_FORMAT="mjpeg"
 VIDEO_SIZE="640x480"
 FRAMERATE="30"
-STREAM_DEST="udp://10.0.0.120:1234"
-BITRATE="6M"
+STREAM_DEST="${STREAM_DEST:-udp://10.0.0.120:1234}"
+BITRATE="${BITRATE:-6M}"
 BUF_SIZE="12M"
 DEFAULT_SHARE="Production"
 # ----------------
