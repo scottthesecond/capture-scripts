@@ -9,26 +9,28 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 VIDEO_FORMAT="${VIDEO_FORMAT:-mjpeg}"
-VIDEO_SIZE="${VIDEO_SIZE:-640x480}"
+VIDEO_SIZE="${VIDEO_SIZE:-720x480}"
 FRAMERATE="${FRAMERATE:-30}"
 STREAM_DEST="${STREAM_DEST:-udp://10.0.0.120:1234}"
 BITRATE="${BITRATE:-6M}"
 BUF_SIZE="${BUF_SIZE:-12M}"
 SHARE="${SHARE:-Production}"
+DURATION="${DURATION:-8100}"  # Default to 2 hours and 15 minutes (8100 seconds)
 # ----------------
 
 # ---- HELP ----
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   echo ""
   echo "Usage:"
-  echo "  $0 [--project <folder>] [--tape <name>] [--share <share>] [--streamAudio] [--format <type>]"
+  echo "  $0 [--project <folder>] [--tape <name>] [--share <share>] [--streamAudio] [--format <type>] [--duration <seconds>]"
   echo ""
   echo "Options:"
-  echo "  --project <folder>  Optional. Name of the project on the NAS. If omitted, will prompt for selection."
-  echo "  --tape <name>       Optional. Name of the tape you're digitizing. If omitted, will prompt for input."
-  echo "  --share <share>     Optional. NAS share name. Defaults to 'Production'."
-  echo "  --streamAudio       Optional. Include audio in UDP stream (default: stream video only)."
-  echo "  --format <type>     Optional. Output recording format. Options: prores, prores-lt (default), hevc."
+  echo "  --project <folder>    Optional. Name of the project on the NAS. If omitted, will prompt for selection."
+  echo "  --tape <name>         Optional. Name of the tape you're digitizing. If omitted, will prompt for input."
+  echo "  --share <share>       Optional. NAS share name. Defaults to 'Production'."
+  echo "  --streamAudio         Optional. Include audio in UDP stream (default: stream video only)."
+  echo "  --format <type>       Optional. Output recording format. Options: prores, prores-lt (default), h264, hevc."
+  echo "  --duration <seconds>  Optional. Recording duration in seconds. Defaults to 8100 (2 hours 15 min). Use 0 for unlimited."
   echo ""
   echo "Folder Selection:"
   echo "  If no project folder is specified, the script will list available folders in the share."
@@ -403,6 +405,10 @@ while [[ "$#" -gt 0 ]]; do
       FORMAT="$2"
       shift
       ;;
+    --duration)
+      DURATION="$2"
+      shift
+      ;;
     *)
       echo "Unknown option: $1"
       exit 1
@@ -493,6 +499,12 @@ case "$FORMAT" in
     ENC_OPTIONS="-profile:v 1"
     PIX_FMT="yuv422p10le"
     ;;
+  h264)
+    VIDEO_CODEC="libx264"
+    ENC_OPTIONS="-crf 17 -preset slow -tune film"
+    PIX_FMT="yuv420p"
+    OUTPUT_FILE="${TAPE_DIR}/${INDEX}.mp4"
+    ;;
   hevc)
     VIDEO_CODEC="libx265"
     ENC_OPTIONS="-crf 18"
@@ -534,13 +546,34 @@ if [ "$MUTE_STREAM" = true ]; then
 else
   echo "📡 Streaming video + audio to $STREAM_DEST"
 fi
-echo "⏹ Press Ctrl+C to stop."
+if [ "$DURATION" -gt 0 ] 2>/dev/null; then
+  HOURS=$((DURATION / 3600))
+  MINUTES=$(((DURATION % 3600) / 60))
+  SECONDS=$((DURATION % 60))
+  if [ "$HOURS" -gt 0 ]; then
+    echo "⏱️  Duration: ${HOURS}h ${MINUTES}m ${SECONDS}s"
+  elif [ "$MINUTES" -gt 0 ]; then
+    echo "⏱️  Duration: ${MINUTES}m ${SECONDS}s"
+  else
+    echo "⏱️  Duration: ${SECONDS}s"
+  fi
+else
+  echo "⏱️  Duration: Unlimited"
+fi
+echo "⏹ Press Ctrl+C to stop manually."
 
 echo "Mute stream: $MUTE_STREAM"
 
 # ---- Run ffmpeg ----
+# Build duration parameter if set
+DURATION_PARAM=""
+if [ "$DURATION" -gt 0 ] 2>/dev/null; then
+  DURATION_PARAM="-t $DURATION"
+fi
+
 if [ "$MUTE_STREAM" = true ]; then
   ffmpeg \
+    $DURATION_PARAM \
     -f v4l2 -input_format "$VIDEO_FORMAT" -framerate "$FRAMERATE" -video_size "$VIDEO_SIZE" -i "$VIDEO_DEVICE" \
     -f alsa -i "$AUDIO_DEVICE" \
     -map 0:v -map 1:a -c:v "$VIDEO_CODEC" $ENC_OPTIONS -pix_fmt "$PIX_FMT" -c:a "$AUDIO_CODEC" "$OUTPUT_FILE" \
@@ -548,6 +581,7 @@ if [ "$MUTE_STREAM" = true ]; then
     -fflags nobuffer -flags low_delay -f mpegts "$STREAM_DEST"
 else
   ffmpeg \
+    $DURATION_PARAM \
     -f v4l2 -input_format "$VIDEO_FORMAT" -framerate "$FRAMERATE" -video_size "$VIDEO_SIZE" -i "$VIDEO_DEVICE" \
     -f alsa -i "$AUDIO_DEVICE" \
     -map 0:v -map 1:a -c:v "$VIDEO_CODEC" $ENC_OPTIONS -pix_fmt "$PIX_FMT" -c:a "$AUDIO_CODEC" "$OUTPUT_FILE" \
